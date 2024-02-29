@@ -1,0 +1,174 @@
+#include <string.h>
+#include <stdlib.h>
+#include <stdio.h>
+
+#include "command.h"
+#include "smsinfo.h"
+#include "EEPROMinfo.h"
+
+#include "lib/g4500/G4500.h"
+#include "lib/GSM/GSM.h"
+#include "lib/os7_com/OS7_COM.h"
+#include "lib/mcu2lib/MCU2LIB.h"
+
+
+
+/*** 
+ * EE_WriteEnable:先開啟才能寫入 EEPROM
+ * EE_MultiWrite(int Block,unsigned Addr,int no,char *Data)
+ * EE_WriteProtect:
+ *---------------------------------------------------------
+ * int Block 		:0~63 (block 7 and 63 is reserved for MiniOS7)
+ * unsigned Addr 	:0~255(each block is 256 bytes)
+ * int no 			:1~16(the data length)
+ * char *Data		:要寫入的資料
+ * return 			:0 (success),1 (eeprom is busy,or the block or addr is invalid)
+***/
+void Write2Flash_SysParam(int type) 
+//這是一個名為Write2Flash_SysParam的函式，它接受一個整數型別的參數type。它的返回類型為void，即不返回任何值。
+{	
+	//將資料寫入EEPROM
+	int i;								//0~16 addr   //用於迴圈中的索引變量。
+	int block;							//0~6 block   //用於EEPROM的區塊索引。
+	unsigned char *pAddr = NULL;        //一個指向無符號字符的指針，最初設置為空。
+	//*用來取得指標所指向的記憶體位置的值。
+	//可以使用 *pAddr 來取得 pAddr 所指向的記憶體位置的值，即一個 unsigned char 型態的值。
+	unsigned int  iOneBlockSize = 0;    //用於保存系統參數的大小。
+	unsigned long ulChecksum = 0;       //用於計算校驗和的變量，初始值為0。
+
+	//type:1
+	if (type == 1) //確認type是否為1。
+	{
+		pAddr = (unsigned char *)&SysParam;  //將pAddr指向SysParam的位址，SysParam是一個特定結構或變數的位址，這裡假設 SysParam是一個結構
+                                             //或者一個大的變數。設置為 SysParam的大小，這通常是使用 sizeof 運算子來獲取SysParam的大小。
+        // 這段程式碼是將結構 SysParam 的地址轉換為一個 unsigned char 指標 pAddr。在 C 語言中，& 運算符用於取得變量的地址。
+		// 因此，&SysParam 表示取得結構 SysParam 的地址。接著，(unsigned char *) 是一個類型轉換操作符，將結構 SysParam 的地址轉換為 
+		// unsigned char 類型的指標。最後，將這個轉換後的指標賦值給 pAddr 變量。這樣做的目的可能是為了以字節為單位來處理結構 SysParam，或者可能
+		// 是為了在某些情況下對結構的內容進行"位元組級別的操作"。這種做法在某些特定的應用場景中可能會有用，比如進行"內存操作"或者將"結構進行序列化"以進行數據傳輸等。
+
+		iOneBlockSize = sizeof(SysParam); 
+		// 計算結構 SysParam 的大小，並將結果賦值給變量 iOneBlockSize。在 C 語言中，sizeof 運算符用來獲取一個數據類型、變量或者表達式的大小（以字節為單位）。	
+		// 因此，sizeof(SysParam) 會返回結構 SysParam 的大小。然後，將這個大小賦值給變量 iOneBlockSize。這樣做的目的可能是為了在後續的程式中知道結構
+		// SysParam 的大小，以便進行相應的內存操作、緩衝區分配等。
+
+		for(i=0; i<(iOneBlockSize-4); i++)
+		// i 初始化為0。
+		// 迴圈會一直執行，直到 i 的值小於 iOneBlockSize - 4 為止。
+		// 每次迭代後，i 的值會遞增1。
+		// iOneBlockSize - 4 是為了排除掉結構或變數中最後四個字節，因為這些字節不參與檢查碼的計算。
+		{
+			ulChecksum+=*pAddr;
+			pAddr++;
+		}
+		// 使用一個循環來計算檢查碼。在每次迭代中，從 pAddr 指向的位置讀取一個字節數據，然後將其添加到 ulChecksum 中，ulChecksum 
+		// 可能是一個 unsigned long 變數，用於保存計算得到的檢查碼值。循環會遍歷 SysParam 的所有元素，但是排除了末尾的四個字節。
+		//--這段程式碼是用來計算結構或者變數 SysParam 中除了最後四個字節之外的所有內容的檢查碼。
+
+		//將資料寫入EEPROM	
+		EE_WriteEnable(); //這個函式的作用是啟用EEPROM的寫入功能。它可能是一個用來控制EEPROM的函式，以允許寫入操作。
+        // 
+		pAddr = (unsigned char *)&SysParam; 
+		//這一行將指標 pAddr 設置為指向 SysParam 的位址。這意味著 pAddr 現在指向了存儲 SysParam 的記憶體位置。
+
+		for ( block = 0; block < 2; block++) //這是一個外層的 for 迴圈，用於迭代兩次，每次迭代都對應EEPROM中的一個區塊。
+		{
+			for(i=0; i< 16; i++) 
+			//這是一個內層的for迴圈，用於在每個EEPROM區塊中迭代16次。
+			//這表示每個區塊會被分成16個小區塊，每個小區塊寫入16個字節的數據。	 	
+			{
+				EE_MultiWrite(block, (16*i), 16, pAddr);
+				//這行程式碼調用了一個名為 EE_MultiWrite 的函式（假設存在），用於寫入EEPROM。它將從 pAddr 指向的位置開始，
+				//從 block 區塊的第 16*i 個字節位置開始，寫入連續的16個字節的數據到EEPROM。
+				pAddr += 16; //這行程式碼將指標 pAddr 移動到下一個16字節的位置，以便在下一次迭代中繼續寫入EEPROM中的下一個數據塊。	
+				// a+=b;相當於a = a + b;	
+				RefreshWDT(); //這個函式的作用是刷新或重設看門狗計時器（WDT），以避免系統在長時間運行後被看門狗計時器重置。
+			}	
+		}
+
+		EE_WriteProtect(); //這個函式的作用是保護EEPROM，防止進一步的寫入操作。這可能是將EEPROM的寫入保護位設置為防寫入的狀態。
+	}
+}
+
+//這段程式碼片段的作用是將系統參數寫入到EEPROM中。它通過遍歷EEPROM的各個區塊和各個區塊內的小區塊，
+//將系統參數進行分段寫入。在寫入完成後，它保護EEPROM以防止進一步的寫入操作。
+
+//----------------------------------------------------------------------------------------------
+
+void ReadFromFlash_SysParam(int type) 
+//該函式用於從 Flash 存儲器中讀取系統參數。它接受一個整數參數 type，根據 type 的值，
+//從不同的區塊中讀取系統參數並存儲到相應的變數中。
+
+{	
+	//讀取eeprom的系統資料到結構	
+	unsigned int i ; 
+	unsigned int block; 
+	unsigned char *pAddr= NULL; 
+
+   // 這些變數用於迴圈中的索引和記憶體位置的指針。i 和 block 用於迴圈計數，
+   // pAddr 用於指向讀取或寫入的記憶體位置。pAddr 初始化為 NULL。
+
+	if (type == 1)
+	{
+		pAddr = (unsigned char *)&SysParam; 
+		//如果 type 為1，則將 pAddr 設置為 SysParam 變數的位址，以便將讀取的資料存儲到 SysParam 中。
+		for( block = 0; block < 2; block++)
+		{
+			for(i=0; i< 16; i++)		
+			{							
+				EE_MultiRead(block, (16*i), 16, pAddr);
+				pAddr += 16;
+				RefreshWDT();
+			}
+		}
+		//如果 type 為1，則進入兩個嵌套的迴圈，從 EEPROM 的前兩個區塊中讀取資料。每次讀取16個字節，
+		//然後將 pAddr 指針向後移動16個字節，以指向下一個位置。
+	}
+	else if(type == 2)
+	{
+		pAddr = (unsigned char *)&GROUP_SysParam; 
+		//如果 type 為2，則將 pAddr 設置為 GROUP_SysParam 變數的位址，以便將讀取的資料存儲到 GROUP_SysParam 中。
+		for( block = 8; block < 62; block++)  
+		{
+			//Print("\r\n block(%d)\r\n", x);
+			for(i=0; i< 16; i++)		
+			{							
+				EE_MultiRead(block, (16*i), 16, pAddr);
+				pAddr += 16;
+				RefreshWDT();
+			}
+			
+		}
+		//如果 type 為2，則進入兩個嵌套的迴圈，從 EEPROM 的第9個到第61個區塊中讀取資料。
+		//每次讀取16個字節，然後將 pAddr 指針向後移動16個字節，以指向下一個位置。
+		//在每次迴圈中，都會調用 RefreshWDT() 函式，以確保監視狗定時器被更新，從而避免系統重啟。
+	}
+}
+
+//-------------------------------------------------------------------------------------------
+
+//bType
+//0: 清空參數資料  //清空 EEPROM 存儲器中特定區塊的資料。以下是程式碼中各部分的解釋：
+void Empty_EEP(void) // 這行定義了一個名為 Empty_EEP 的函式，該函式不接受任何參數。
+{
+	unsigned int i = 0; //這些變數 i 和 j 是用於迴圈計數的整數變數，分別用於迴圈控制外層和內層的迴圈。
+	unsigned int j = 0;
+	char  EmptyData[16] = {0}; // 這是一個長度為16的字元陣列，用於存儲空的資料。在此情況下，陣列被初始化為全0。
+	
+	memset(EmptyData, 0xff, sizeof(EmptyData));   //0xff=255
+	//這行程式碼使用 memset 函式將 EmptyData 陣列的所有元素設置為 0xff，即將其填充為全部為1的資料。這樣做是為了將資料設置為空值。
+	EE_WriteEnable();//这个函数的作用可能是使EEPROM可以写入数据，但这个函数的具体实现不在代码中。
+	for(i=10;i<60;i++)
+	//使用嵌套的循环来遍历EEPROM中的一部分数据，具体是从地址10到59（地址范围为[10, 59]），每次操作16个字节的数据。
+	{
+		for(j=0;j<16;j++)
+		{
+			EE_MultiWrite(i, (16*j), 16, EmptyData); 
+			//---i：表示要写入数据的起始地址。(16*j)：表示要写入数据的偏移量，j 是一个循环变量，于在每次迭代中计算偏移量。16：表示要写入数据的长度，即要写入的字节数。
+			//---EmptyData：表示要写入的数据，即用来填充 EEPROM 的数据。在这里，它是一个全部为 0xFF 的数组，用于清空 EEPROM 中的数据。
+			//在内部循环中，调用了一个名为 EE_MultiWrite() 的函数，将地址范围为 i 到 i+15（即16个字节）的数据写入EEPROM，并将其设置为 EmptyData 中的内容，即全部为0xFF。
+			RefreshWDT();
+			//在每次内部循环结束后调用了一个名为 RefreshWDT() 的函数，可能是用来刷新看门狗定时器，避免系统因长时间无响应而重启。
+		}
+	}
+	EE_WriteProtect(); // 最后调用了一个名为 EE_WriteProtect() 的函数，可能是用来保护EEPROM数据不被修改的。 
+}
